@@ -1,0 +1,52 @@
+node_modules/
+venv/
+
+# Build outputs
+dist/
+build/
+.cache/
+.vite/
+.turbo/
+.parcel-cache/
+
+__pycache__/
+
+# Bun/lockfiles
+backend/bun.lock
+backend/bun.lock
+bun.lock
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Coverage
+coverage/
+
+# Editor/OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Env files (do not commit secrets)
+.env
+.env.*
+**/.env
+backend/.env
+
+# Local dev
+*.local
+*.swp
+*.swo
+
+# Misc
+.tmp/
+.temp/

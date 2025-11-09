@@ -1,0 +1,145 @@
+import { ChatInput } from "@/components/custom/chatinput";
+import {
+  PreviewMessage,
+  ThinkingMessage,
+} from "../../components/custom/message";
+import { useScrollToBottom } from "@/components/custom/use-scroll-to-bottom";
+import { useState, useRef } from "react";
+import { message } from "../../interfaces/interfaces";
+import { Overview } from "@/components/custom/overview";
+import { Header } from "@/components/custom/header";
+import { v4 as uuidv4 } from "uuid";
+import { Link } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faMessage } from "@fortawesome/free-regular-svg-icons";
+
+//const socket = new WebSocket("ws://localhost:5090"); //change to your websocket endpoint
+
+// get the device (instance)'s websocket endpoint
+const proto = window.location.protocol === "https:" ? "wss" : "ws";
+const host = window.location.hostname;
+const socket = new WebSocket(`${proto}://${host}:5090`);
+
+export function Chat() {
+  const [messagesContainerRef, messagesEndRef] =
+    useScrollToBottom<HTMLDivElement>();
+  const [messages, setMessages] = useState<message[]>([]);
+  const [question, setQuestion] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(
+    null
+  );
+
+  const cleanupMessageHandler = () => {
+    if (messageHandlerRef.current && socket) {
+      socket.removeEventListener("message", messageHandlerRef.current);
+      messageHandlerRef.current = null;
+    }
+  };
+
+  async function handleSubmit(text?: string) {
+    if (!socket || socket.readyState !== WebSocket.OPEN || isLoading) return;
+
+    const messageText = text || question;
+    setIsLoading(true);
+    cleanupMessageHandler();
+
+    const traceId = uuidv4();
+    setMessages((prev) => [
+      ...prev,
+      { content: messageText, role: "user", id: traceId },
+    ]);
+    try {
+      localStorage.setItem("latestUserText", messageText);
+    } catch {}
+    socket.send(messageText);
+    setQuestion("");
+
+    try {
+      let buffer = "";
+      const messageHandler = (event: MessageEvent) => {
+        const chunk = event.data;
+        if (chunk.includes("[END]")) {
+          setIsLoading(false);
+          // Final write of buffered assistant content
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage?.role === "assistant") {
+              const finalMsg = { ...lastMessage, content: buffer };
+              const updated = [...prev.slice(0, -1), finalMsg];
+              try {
+                localStorage.setItem("latestAssistantText", buffer);
+              } catch {}
+              return updated;
+            } else {
+              const finalMsg = {
+                content: buffer,
+                role: "assistant",
+                id: traceId,
+              };
+              try {
+                localStorage.setItem("latestAssistantText", buffer);
+              } catch {}
+              return [...prev, finalMsg];
+            }
+          });
+          cleanupMessageHandler();
+          return;
+        }
+
+        buffer += chunk;
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage?.role === "assistant") {
+            return [...prev.slice(0, -1), { ...lastMessage, content: buffer }];
+          }
+          return [...prev, { content: buffer, role: "assistant", id: traceId }];
+        });
+      };
+
+      messageHandlerRef.current = messageHandler;
+      socket.addEventListener("message", messageHandler);
+    } catch (error) {
+      console.error("WebSocket error:", error);
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col min-w-0 h-dvh bg-background relative">
+      <Header />
+      <div
+        className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
+        ref={messagesContainerRef}
+      >
+        {messages.length == 0 && <Overview />}
+        {messages.map((message, index) => (
+          <PreviewMessage key={index} message={message} />
+        ))}
+        {isLoading && <ThinkingMessage />}
+        <div
+          ref={messagesEndRef}
+          className="shrink-0 min-w-[24px] min-h-[24px]"
+        />
+      </div>
+      <div className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
+        <ChatInput
+          question={question}
+          setQuestion={setQuestion}
+          onSubmit={handleSubmit}
+          isLoading={isLoading}
+        />
+      </div>
+      {/* Floating button back to canvas */}
+      <div className="absolute bottom-6 right-6 flex flex-col gap-2">
+        <Link
+          to="/"
+          className="inline-flex items-center justify-center rounded-full bg-black hover:bg-zinc-800 active:scale-[0.98] text-white w-14 h-14 shadow-lg shadow-indigo-600/30 transition-colors"
+        >
+          <FontAwesomeIcon icon={faMessage} className="text-2xl" />
+        </Link>
+      </div>
+    </div>
+  );
+}
